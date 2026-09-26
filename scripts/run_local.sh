@@ -7,4 +7,4 @@ echo "==> Interactive Dashboard UI: http://localhost:${PORT}/"
 echo "==> Swagger API Documentation: http://localhost:${PORT}/docs"
 echo "==> Health check: http://localhost:${PORT}/v1/healthz"
 export PYTHONPATH=.
-exec .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port "${PORT}" --workers 1
+exec .venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT}" --workers 1
