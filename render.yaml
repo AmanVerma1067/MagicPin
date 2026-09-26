@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: magicpin-vera-engine
+    runtime: docker
+    plan: starter
+    region: singapore
+    healthCheckPath: /v1/healthz
+    autoDeploy: true
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: LLM_TIMEOUT_S
+        value: "7.0"
+      - key: TICK_DEADLINE_S
+        value: "22.0"
+      - key: REPLY_DEADLINE_S
+        value: "18.0"
+      - key: COMPOSE_CONCURRENCY
+        value: "8"
+      - key: TEAM_NAME
+        value: "Team Vera"
+      - key: TEAM_MEMBERS
+        value: "Aman Verma"
+      - key: APP_VERSION
+        value: "1.0.0"
