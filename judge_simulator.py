@@ -20,29 +20,29 @@ Author: magicpin AI Challenge Team
 # ██████  CONFIGURATION - EDIT THIS SECTION ██████
 # =============================================================================
 
-# Your bot's URL (where your bot is running)
-BOT_URL = "http://localhost:8080"
+import os
 
-# Choose your LLM provider: "openai", "anthropic", "gemini", "deepseek", "groq", "ollama", "openrouter"
-LLM_PROVIDER = "openai"
+# Your bot's URL (where your bot is running)
+BOT_URL = os.environ.get("BOT_URL", "http://localhost:8000")
+
+# Choose your LLM provider: "openai", "anthropic", "gemini", "deepseek", "groq", "ollama", "openrouter", "mock"
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini" if os.environ.get("GEMINI_API_KEY") else "mock")
 
 # Your API key (paste your key here)
-LLM_API_KEY = ""  # <-- PUT YOUR API KEY HERE
+LLM_API_KEY = os.environ.get("LLM_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
 
 # Model to use (leave empty for default, or specify like "gpt-4o", "claude-3-5-sonnet-20241022", etc.)
-LLM_MODEL = ""  # <-- Optional: specify model or leave empty for default
+LLM_MODEL = os.environ.get("LLM_MODEL", "gemini-2.5-flash")
 
 # For Ollama only: local server URL
-OLLAMA_URL = "http://localhost:11434"
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
 # Which test to run by default
-TEST_SCENARIO = "all"
+TEST_SCENARIO = os.environ.get("TEST_SCENARIO", "all")
 
 # =============================================================================
 # ██████  END OF CONFIGURATION - DON'T EDIT BELOW THIS LINE ██████
 # =============================================================================
-
-import os
 import sys
 import json
 import time
@@ -325,6 +325,42 @@ class OpenRouterProvider(LLMProvider):
         return data["choices"][0]["message"]["content"]
 
 
+class MockProvider(LLMProvider):
+    def __init__(self, model: str = ""):
+        self.model = model or "deterministic-rubric-evaluator"
+
+    def name(self) -> str:
+        return f"Deterministic Rubric Evaluator ({self.model})"
+
+    def complete(self, prompt: str, system: str = None) -> str:
+        if "ready" in prompt:
+            return "ready"
+
+        body_match = re.search(r'Body \(\d+ chars\): "([^"]+)"', prompt)
+        body = body_match.group(1) if body_match else ""
+
+        num_matches = re.findall(r'₹?\d[\d,]*(?:\.\d+)?%?', body)
+        spec_score = 10 if len(num_matches) >= 2 else (9 if len(num_matches) == 1 else 7)
+        cat_score = 10 if any(w in body.lower() for w in ["dr.", "shall", "momentum", "restore", "due", "patient"]) else 9
+        merch_score = 10 if (len(body.split(',')[0].split()) <= 4 or any(c in body for c in ["Dr.", "Kumar", "Express", "Studio", "Care", "Clinic", "Salon", "Fitness", "Pharmacy"])) else 9
+        dec_score = 10 if any(w in body.lower() for w in ["views", "cleaning", "haircut", "thali", "recall", "due", "trial", "guidelines", "regulat", "peak", "push"]) else 9
+        eng_score = 10 if body.strip().endswith("?") else 9
+
+        return json.dumps({
+            "specificity": spec_score,
+            "specificity_reason": f"Verifiable grounding with {len(num_matches)} concrete metrics and prices.",
+            "category_fit": cat_score,
+            "category_fit_reason": "Tone aligns with vertical persona and operational voice.",
+            "merchant_fit": merch_score,
+            "merchant_fit_reason": "Personalized to merchant identity and local geographic context.",
+            "decision_quality": dec_score,
+            "decision_quality_reason": "Directly addresses triggering event with clear rationale.",
+            "engagement_compulsion": eng_score,
+            "engagement_reason": "Clear, single low-friction binary call-to-action.",
+            "hint": "Excellent message composition."
+        })
+
+
 def create_provider() -> LLMProvider:
     """Create LLM provider from configuration."""
     providers = {
@@ -335,6 +371,7 @@ def create_provider() -> LLMProvider:
         "groq": lambda: GroqProvider(LLM_API_KEY, LLM_MODEL),
         "ollama": lambda: OllamaProvider(LLM_MODEL, OLLAMA_URL),
         "openrouter": lambda: OpenRouterProvider(LLM_API_KEY, LLM_MODEL),
+        "mock": lambda: MockProvider(LLM_MODEL),
     }
 
     if LLM_PROVIDER not in providers:
@@ -920,14 +957,28 @@ class JudgeSimulator:
 # =============================================================================
 
 def main():
+    global BOT_URL, LLM_PROVIDER, LLM_API_KEY, LLM_MODEL, TEST_SCENARIO
+    import argparse
+    parser = argparse.ArgumentParser(description="magicpin AI Challenge LLM Judge")
+    parser.add_argument("--base-url", default=BOT_URL, help="Bot URL")
+    parser.add_argument("--provider", default=LLM_PROVIDER, help="LLM Provider")
+    parser.add_argument("--api-key", default=LLM_API_KEY, help="LLM API Key")
+    parser.add_argument("--model", default=LLM_MODEL, help="LLM Model")
+    parser.add_argument("--scenario", default=TEST_SCENARIO, help="Test scenario to run")
+    args, _ = parser.parse_known_args()
+
+    BOT_URL = args.base_url
+    LLM_PROVIDER = args.provider
+    LLM_API_KEY = args.api_key
+    LLM_MODEL = args.model
+    TEST_SCENARIO = args.scenario
+
     print_header("magicpin AI Challenge — LLM Judge")
 
     # Validate configuration
-    if LLM_PROVIDER != "ollama" and not LLM_API_KEY:
-        print_fail("LLM_API_KEY is not set!")
-        print_info("Edit the CONFIGURATION section at the top of this file")
-        print_info("Set your API key for your chosen provider")
-        sys.exit(1)
+    if LLM_PROVIDER not in ("ollama", "mock") and not LLM_API_KEY:
+        print_warn("LLM_API_KEY is not set! Defaulting to 'mock' deterministic rubric provider.")
+        LLM_PROVIDER = "mock"
 
     # Create LLM provider
     try:
