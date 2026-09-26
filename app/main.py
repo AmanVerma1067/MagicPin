@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List
+
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
+from app.composer import compose
+from app.config import settings
+from app.llm import GeminiClient
+from app.logging_setup import setup_logging
+from app.reply_fsm import ConversationManager
+from app.schemas import (
+    ContextAck,
+    ContextPush,
+    Health,
+    Metadata,
+    OutboundAction,
+    ReplyRequest,
+    ReplyResponse,
+    TickRequest,
+    TickResponse,
+)
+from app.signals import select_top_candidates
+from app.store import ContextStore
+from app.suppression import SentLedger, generate_suppression_key
+
+logger = logging.getLogger("vera.main")
+
+# State holders
+_start_time: float = time.time()
+_store: ContextStore = ContextStore(max_context_bytes=settings.MAX_CONTEXT_BYTES)
+_ledger: SentLedger = SentLedger()
+_gemini_client: GeminiClient = GeminiClient(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
+_fsm: ConversationManager = ConversationManager(store=_store)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _start_time, _store, _ledger, _gemini_client, _fsm
+    setup_logging(settings.LOG_LEVEL)
+    logger.info("Initializing Vera Engine...")
+    _start_time = time.time()
+    if _store is None:
+        _store = ContextStore(max_context_bytes=settings.MAX_CONTEXT_BYTES)
+    if _ledger is None:
+        _ledger = SentLedger()
+    if _gemini_client is None:
+        _gemini_client = GeminiClient(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
+    if _fsm is None:
+        _fsm = ConversationManager(store=_store)
+    logger.info("Vera Engine ready to accept traffic.")
+    yield
+    logger.info("Shutting down Vera Engine.")
+
+
+app = FastAPI(
+    title="Vera Engine",
+    description="magicpin AI Challenge Merchant Assistant",
+    version=settings.APP_VERSION,
+    lifespan=lifespan,
+)
+
+
+@app.exception_handler(Exception)
+async def global_fail_safe_exception_handler(request: Request, exc: Exception):
+    """Fail-Safe: Endpoints must never return 500."""
+    logger.error(f"Handled uncaught exception on {request.url.path}: {exc}", exc_info=True)
+    if request.url.path == "/v1/tick":
+        return JSONResponse(status_code=200, content={"actions": []})
+    elif request.url.path == "/v1/reply":
+        return JSONResponse(
+            status_code=200,
+            content={
+                "action": "wait",
+                "body": None,
+                "cta": None,
+                "rationale": "Internal exception; backing off safely.",
+                "wait_seconds": 3600,
+            },
+        )
+    return JSONResponse(
+        status_code=200,
+        content={"status": "error_handled", "detail": str(exc)},
+    )
+
+
+@app.get("/v1/healthz", response_model=Health)
+async def healthz():
+    """Lock-free liveness probe in < 5ms."""
+    uptime = time.time() - _start_time if _start_time > 0 else 0.0
+    counts = _store.get_counts()
+    return Health(
+        status="ok",
+        uptime_seconds=round(uptime, 2),
+        contexts_loaded=counts,
+    )
+
+
+@app.get("/v1/metadata", response_model=Metadata)
+async def metadata():
+    return Metadata(
+        team_name=settings.TEAM_NAME,
+        team_members=settings.TEAM_MEMBERS,
+        model=settings.GEMINI_MODEL,
+        approach="Deterministic signal ranking + grounded numeric facts gate + Gemini composer with verified fallback",
+        version=settings.APP_VERSION,
+        contact_email="team.vera@magicpin.in",
+        submitted_at="2026-04-26T08:00:00Z",
+    )
+
+
+@app.post("/v1/context", response_model=ContextAck)
+async def push_context(push: ContextPush):
+    ack = _store.upsert(push)
+    return ack
+
+
+@app.post("/v1/tick", response_model=TickResponse)
+async def tick(req: TickRequest):
+    # 1. Select top candidates with suppression filter & max 1 per merchant
+    candidates = select_top_candidates(
+        now=req.now,
+        trigger_ids=req.available_triggers,
+        store_getter=_store.get,
+        is_suppressed_fn=_ledger.is_suppressed,
+        suppression_key_fn=generate_suppression_key,
+        max_actions=20,
+    )
+
+    if not candidates:
+        return TickResponse(actions=[])
+
+    # 2. Concurrency control via semaphore + deadline budget
+    semaphore = asyncio.Semaphore(settings.COMPOSE_CONCURRENCY)
+
+    async def _compose_worker(cand):
+        async with semaphore:
+            action_dict = await compose(
+                category=cand.category,
+                merchant=cand.merchant,
+                trigger=cand.trigger,
+                customer=cand.customer,
+                gemini_client=_gemini_client,
+                now=req.now,
+            )
+            sup_key = action_dict.get("suppression_key")
+            if sup_key:
+                _ledger.record_sent(sup_key, req.now)
+            return OutboundAction(**action_dict)
+
+    tasks = [_compose_worker(c) for c in candidates]
+
+    try:
+        results = await asyncio.wait_for(
+            asyncio.gather(*tasks, return_exceptions=True),
+            timeout=settings.TICK_DEADLINE_S,
+        )
+        actions: List[OutboundAction] = [
+            r for r in results if isinstance(r, OutboundAction)
+        ]
+        return TickResponse(actions=actions[:20])
+    except asyncio.TimeoutError:
+        logger.warning(f"Tick processing deadline {settings.TICK_DEADLINE_S}s exceeded; returning partial actions.")
+        return TickResponse(actions=[])
+    except Exception as e:
+        logger.error(f"Error during tick composition: {e}")
+        return TickResponse(actions=[])
+
+
+@app.post("/v1/reply", response_model=ReplyResponse)
+async def reply(req: ReplyRequest):
+    resp = _fsm.process_reply(req)
+    return resp
