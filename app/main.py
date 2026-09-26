@@ -6,8 +6,10 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List
 
+from pathlib import Path
+import json
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.composer import compose
 from app.config import settings
@@ -28,6 +30,7 @@ from app.schemas import (
 from app.signals import select_top_candidates
 from app.store import ContextStore
 from app.suppression import SentLedger, generate_suppression_key
+from app.ui import get_dashboard_html
 
 logger = logging.getLogger("vera.main")
 
@@ -64,6 +67,37 @@ app = FastAPI(
     version=settings.APP_VERSION,
     lifespan=lifespan,
 )
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def dashboard_ui():
+    """Interactive visual dashboard for testing proactive outreach and conversational FSM."""
+    return HTMLResponse(content=get_dashboard_html())
+
+
+@app.post("/v1/load-seed-dataset", include_in_schema=False)
+async def load_seed_dataset():
+    """Load expanded dataset into in-memory context store."""
+    loaded = 0
+    expanded_path = Path("expanded")
+    if expanded_path.exists():
+        for cf in (expanded_path / "categories").glob("*.json"):
+            data = json.load(open(cf))
+            _store.upsert(ContextPush(scope="category", context_id=data.get("slug", cf.stem), version=1, payload=data))
+            loaded += 1
+        for mf in (expanded_path / "merchants").glob("*.json"):
+            data = json.load(open(mf))
+            _store.upsert(ContextPush(scope="merchant", context_id=data.get("merchant_id", mf.stem), version=1, payload=data))
+            loaded += 1
+        for cuf in (expanded_path / "customers").glob("*.json"):
+            data = json.load(open(cuf))
+            _store.upsert(ContextPush(scope="customer", context_id=data.get("customer_id", cuf.stem), version=1, payload=data))
+            loaded += 1
+        for tf in (expanded_path / "triggers").glob("*.json"):
+            data = json.load(open(tf))
+            _store.upsert(ContextPush(scope="trigger", context_id=data.get("id", tf.stem), version=1, payload=data))
+            loaded += 1
+    return {"status": "ok", "loaded_count": loaded, "contexts_loaded": _store.get_counts()}
 
 
 @app.exception_handler(Exception)
