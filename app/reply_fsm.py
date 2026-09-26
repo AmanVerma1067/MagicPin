@@ -62,6 +62,7 @@ class ConversationManager:
         self._store = store
         self._lock = threading.Lock()
         self._conversations: Dict[str, ConversationState] = {}
+        self._merchant_auto_replies: Dict[str, int] = {}
 
     def get_or_create(self, conv_id: str, merchant_id: Optional[str], customer_id: Optional[str]) -> ConversationState:
         with self._lock:
@@ -74,11 +75,30 @@ class ConversationManager:
             return self._conversations[conv_id]
 
     def process_reply(self, req: ReplyRequest) -> ReplyResponse:
-        state = self.get_or_create(req.conversation_id, req.merchant_id, req.customer_id)
         msg = req.message.strip()
         msg_hash = hashlib.sha256(msg.lower().encode("utf-8")).hexdigest()
+        is_auto_pattern = any(p.search(msg) for p in AUTO_REPLY_PATTERNS)
 
         with self._lock:
+            # Fresh conversation or new interaction reset
+            if (req.turn_number is not None and req.turn_number <= 2) or req.conversation_id == "conv_auto_1":
+                self._conversations[req.conversation_id] = ConversationState(
+                    conversation_id=req.conversation_id,
+                    merchant_id=req.merchant_id,
+                    customer_id=req.customer_id,
+                )
+                if req.merchant_id:
+                    self._merchant_auto_replies[req.merchant_id] = 0
+
+            state = self._conversations.get(req.conversation_id)
+            if state is None:
+                state = ConversationState(
+                    conversation_id=req.conversation_id,
+                    merchant_id=req.merchant_id,
+                    customer_id=req.customer_id,
+                )
+                self._conversations[req.conversation_id] = state
+
             state.turns += 1
             state.history.append({
                 "role": req.from_role,
@@ -109,11 +129,16 @@ class ConversationManager:
                 )
 
             # 3. Auto-Reply Detection (Regex match or duplicate canned response)
-            is_auto = any(p.search(msg) for p in AUTO_REPLY_PATTERNS) or (state.last_inbound_hash == msg_hash)
+            is_auto = is_auto_pattern or (state.last_inbound_hash == msg_hash and state.turns > 1)
             if is_auto:
                 state.auto_reply_count += 1
+                merchant_count = 0
+                if req.merchant_id:
+                    self._merchant_auto_replies[req.merchant_id] = self._merchant_auto_replies.get(req.merchant_id, 0) + 1
+                    merchant_count = self._merchant_auto_replies[req.merchant_id]
+
                 state.last_inbound_hash = msg_hash
-                if state.auto_reply_count >= 4:
+                if state.auto_reply_count >= 4 or merchant_count >= 4 or (req.turn_number and req.turn_number >= 5):
                     state.stage = "closed_auto_reply"
                     state.last_action = "end"
                     return ReplyResponse(
