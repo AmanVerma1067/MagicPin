@@ -2,7 +2,7 @@ services:
   - type: web
     name: magicpin-vera-engine
     runtime: docker
-    plan: starter
+    plan: free
     region: singapore
     healthCheckPath: /v1/healthz
     autoDeploy: true

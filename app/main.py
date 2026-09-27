@@ -56,6 +56,37 @@ async def lifespan(app: FastAPI):
         _gemini_client = GeminiClient(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
     if _fsm is None:
         _fsm = ConversationManager(store=_store)
+    
+    # Pre-load expanded seed dataset so engine is immediately context-aware on boot
+    expanded_path = Path("expanded")
+    if expanded_path.exists():
+        logger.info("Pre-loading expanded dataset into store...")
+        for cf in (expanded_path / "categories").glob("*.json"):
+            try:
+                data = json.load(open(cf))
+                _store.upsert(ContextPush(scope="category", context_id=data.get("slug", cf.stem), version=1, payload=data))
+            except Exception as e:
+                logger.warning(f"Failed loading category {cf}: {e}")
+        for mf in (expanded_path / "merchants").glob("*.json"):
+            try:
+                data = json.load(open(mf))
+                _store.upsert(ContextPush(scope="merchant", context_id=data.get("merchant_id", mf.stem), version=1, payload=data))
+            except Exception as e:
+                logger.warning(f"Failed loading merchant {mf}: {e}")
+        for cuf in (expanded_path / "customers").glob("*.json"):
+            try:
+                data = json.load(open(cuf))
+                _store.upsert(ContextPush(scope="customer", context_id=data.get("customer_id", cuf.stem), version=1, payload=data))
+            except Exception as e:
+                logger.warning(f"Failed loading customer {cuf}: {e}")
+        for tf in (expanded_path / "triggers").glob("*.json"):
+            try:
+                data = json.load(open(tf))
+                _store.upsert(ContextPush(scope="trigger", context_id=data.get("id", tf.stem), version=1, payload=data))
+            except Exception as e:
+                logger.warning(f"Failed loading trigger {tf}: {e}")
+        logger.info(f"Contexts ready: {_store.get_counts()}")
+
     logger.info("Vera Engine ready to accept traffic.")
     yield
     logger.info("Shutting down Vera Engine.")
