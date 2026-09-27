@@ -21,22 +21,25 @@ class Settings(BaseSettings):
     COMPOSE_CONCURRENCY: int = 8
     MAX_CONTEXT_BYTES: int = 512000
     TEAM_NAME: str = "Team Vera"
-    TEAM_MEMBERS: List[str] = ["Aman Verma"]
+    TEAM_MEMBERS: Any = ["Aman Verma"]
     APP_VERSION: str = "1.0.0"
     PORT: int = 8000
     LOG_LEVEL: str = "INFO"
 
-    @field_validator("TEAM_MEMBERS", mode="before")
+    @field_validator("TEAM_MEMBERS", mode="after")
     @classmethod
-    def parse_team_members(cls, v: Union[str, List[str]]) -> List[str]:
+    def parse_team_members(cls, v: Any) -> List[str]:
         if isinstance(v, str):
             try:
                 parsed = json.loads(v)
                 if isinstance(parsed, list):
                     return [str(item) for item in parsed]
             except Exception:
-                return [m.strip() for m in v.split(",") if m.strip()]
-        return v
+                pass
+            return [m.strip() for m in v.split(",") if m.strip()]
+        elif isinstance(v, (list, tuple)):
+            return [str(item) for item in v]
+        return ["Aman Verma"]
 
 
 settings = Settings()

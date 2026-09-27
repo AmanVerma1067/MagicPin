@@ -22,6 +22,6 @@ services:
       - key: TEAM_NAME
         value: "Team Vera"
       - key: TEAM_MEMBERS
-        value: "Aman Verma"
+        value: '["Aman Verma"]'
       - key: APP_VERSION
         value: "1.0.0"
