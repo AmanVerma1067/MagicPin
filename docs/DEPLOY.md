@@ -34,14 +34,15 @@ Once deployed on Render, execute:
 
 ```bash
 # 1. Health check
-curl -sS https://<your-render-app>.onrender.com/v1/healthz
+curl -sS https://magicpin-vera29.onrender.com/v1/healthz
 
 # 2. Metadata check
-curl -sS https://<your-render-app>.onrender.com/v1/metadata
+curl -sS https://magicpin-vera29.onrender.com/v1/metadata
 
 # 3. Remote Judge Simulator Execution
-python3 judge_simulator.py --base-url https://<your-render-app>.onrender.com --scenario all
+python3 judge_simulator.py --base-url https://magicpin-vera29.onrender.com --scenario all
 
-# 4. Full 30-Pair Remote Evaluation
-python3 judge_simulator.py --base-url https://<your-render-app>.onrender.com --scenario full_evaluation
+# 4. Full Remote Evaluation (14 messages across 5 verticals)
+python3 judge_simulator.py --base-url https://magicpin-vera29.onrender.com --scenario full_evaluation
 ```
+

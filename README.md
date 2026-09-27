@@ -1,8 +1,15 @@
 # Vera Engine — magicpin AI Challenge Merchant Assistant
 
 **Vera Engine** is magicpin's autonomous, high-speed, grounded merchant engagement engine for local businesses across 5 verticals: **Dentists, Salons, Restaurants, Gyms, and Pharmacies**.
-
 Built with a strict separation of concerns: **Code makes all business decisions; LLMs handle message craft.**
+
+### 🌐 Live Production Deployment
+- **Live Service URL**: [https://magicpin-vera29.onrender.com](https://magicpin-vera29.onrender.com)
+- **Interactive UI Dashboard**: [https://magicpin-vera29.onrender.com/](https://magicpin-vera29.onrender.com/)
+- **Interactive OpenAPI Docs**: [https://magicpin-vera29.onrender.com/docs](https://magicpin-vera29.onrender.com/docs)
+- **Liveness Health Check**: [https://magicpin-vera29.onrender.com/v1/healthz](https://magicpin-vera29.onrender.com/v1/healthz)
+- **Engine Metadata**: [https://magicpin-vera29.onrender.com/v1/metadata](https://magicpin-vera29.onrender.com/v1/metadata)
+
 
 ---
 
@@ -164,8 +171,9 @@ The repository is containerized via [`Dockerfile`](Dockerfile) and configured wi
 4. Set the `GEMINI_API_KEY` secret variable and click **Apply**.
 5. Once live, test your public URL:
    ```bash
-   curl -sS https://<your-service>.onrender.com/v1/healthz
-   python3 judge_simulator.py --base-url https://<your-service>.onrender.com --scenario all
+   curl -sS https://magicpin-vera29.onrender.com/v1/healthz
+   python3 judge_simulator.py --base-url https://magicpin-vera29.onrender.com --scenario all
+   python3 judge_simulator.py --base-url https://magicpin-vera29.onrender.com --scenario full_evaluation
    ```
 
 See [docs/DEPLOY.md](docs/DEPLOY.md) for detailed deployment operations.
