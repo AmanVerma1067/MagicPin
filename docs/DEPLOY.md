@@ -15,9 +15,9 @@ The Vera Engine is containerized via Docker and orchestrated on Render using `re
 ## 2. One-Click Blueprint Deployment
 
 1. **Connect GitHub Repository**:
-   - Repository: `https://github.com/AmanVerma1067/MaginPin`
+   - Repository: `https://github.com/AmanVerma1067/MagicPin`
    - In Render Dashboard, click **New +** -> **Blueprint**.
-   - Select `AmanVerma1067/MaginPin`. Render will automatically detect `render.yaml`.
+   - Select `AmanVerma1067/MagicPin`. Render will automatically detect `render.yaml`.
 2. **Environment Variables**:
    - `GEMINI_API_KEY`: Set your Google Gemini API key.
    - All other parameters (`GEMINI_MODEL`, `LLM_TIMEOUT_S`, `TICK_DEADLINE_S`, `REPLY_DEADLINE_S`, `COMPOSE_CONCURRENCY`, `TEAM_NAME`, `TEAM_MEMBERS`, `APP_VERSION`) are pre-configured in `render.yaml`.

@@ -74,6 +74,30 @@ Target for all dimensions: $\ge 9.0 / 10.0$.
 
 ## 4. Quickstart: Local Execution
 
+### Option A: Fish Terminal (Linux / macOS)
+
+```fish
+# 1. Setup virtual environment
+python3 -m venv .venv
+source .venv/bin/activate.fish
+pip install -r requirements.txt
+
+# 2. Expand dataset
+python3 dataset/generate_dataset.py --seed-dir dataset --out expanded
+
+# 3. Run all unit & integration tests
+pytest -v
+
+# 4. Start engine locally
+./scripts/run_local.fish
+# Or: python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+
+# 5. Run official judge simulator
+python3 judge_simulator.py --base-url http://127.0.0.1:8000 --scenario all
+```
+
+### Option B: Bash / Zsh Terminal
+
 ```bash
 # 1. Setup virtual environment
 python3 -m venv .venv
