@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import List, Union
+from typing import Any, List, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -42,4 +42,5 @@ class Settings(BaseSettings):
         return ["Aman Verma"]
 
 
+Settings.model_rebuild()
 settings = Settings()
