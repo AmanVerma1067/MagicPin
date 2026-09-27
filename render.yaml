@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: magicpin-vera
+    name: magicpin-vera29
     runtime: docker
     plan: free
     region: oregon

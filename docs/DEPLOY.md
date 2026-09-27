@@ -3,11 +3,11 @@
 ## 1. Overview
 The Vera Engine is containerized via Docker and orchestrated on Render using `render.yaml` Blueprint specification.
 
-- **Service Name**: `magicpin-vera-engine`
+- **Service Name**: `magicpin-vera29`
 - **Environment**: Docker (`python:3.11-slim`)
-- **Region**: Singapore (`singapore`)
+- **Region**: Oregon (`oregon`)
 - **Health Check Path**: `/v1/healthz`
-- **Instance Sizing**: Starter ($7/mo or Free tier)
+- **Instance Sizing**: Free tier (zero cost) or Starter
 - **Concurrency**: Single worker (`--workers 1`) handling async I/O via `asyncio` and `uvloop`
 
 ---
@@ -24,7 +24,7 @@ The Vera Engine is containerized via Docker and orchestrated on Render using `re
 3. **Deploy**:
    - Click **Apply**.
    - Render will build the container from `Dockerfile`, install dependencies, run health checks against `/v1/healthz`, and assign a public domain:
-     `https://<your-render-app>.onrender.com`
+     `https://magicpin-vera29.onrender.com`
 
 ---
 
