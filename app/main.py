@@ -155,6 +155,7 @@ async def global_fail_safe_exception_handler(request: Request, exc: Exception):
 
 
 @app.get("/v1/healthz", response_model=Health)
+@app.get("/healthz", response_model=Health, include_in_schema=False)
 async def healthz():
     """Lock-free liveness probe in < 5ms."""
     uptime = time.time() - _start_time if _start_time > 0 else 0.0
@@ -167,6 +168,7 @@ async def healthz():
 
 
 @app.get("/v1/metadata", response_model=Metadata)
+@app.get("/metadata", response_model=Metadata, include_in_schema=False)
 async def metadata():
     return Metadata(
         team_name=settings.TEAM_NAME,
