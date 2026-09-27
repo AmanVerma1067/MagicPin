@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from app.facts import extract_facts, GroundedFacts
+from app.facts import extract_facts, GroundedFacts, parse_offer
 from app.llm import GeminiClient
 from app.playbooks import get_playbook
 from app.suppression import generate_suppression_key
@@ -12,6 +12,32 @@ from app.templates import render_fallback_template
 from app.validator import validate_grounding_and_format
 
 logger = logging.getLogger("vera.composer")
+
+
+def _format_offer(offer: Dict[str, Any]) -> str:
+    p = parse_offer(offer)
+    return f"{p['service']} (Price: ₹{p['price']})" if p["price"] else p["title"]
+
+
+def _format_signal_value(key: str, val: Any) -> str:
+    if isinstance(val, float) and (key.endswith("_pct") or key.startswith("delta")) and abs(val) <= 5:
+        return f"{val * 100:+.0f}%"
+    if isinstance(val, list):
+        return ", ".join(v.get("label", str(v)) if isinstance(v, dict) else str(v) for v in val[:4])
+    if isinstance(val, dict):
+        return ", ".join(f"{k}={v}" for k, v in val.items())
+    return str(val)
+
+
+def format_trigger_signals(payload: Dict[str, Any]) -> str:
+    """Render payload anomalies as labelled figures the model can quote verbatim."""
+    parts = []
+    for key, val in (payload or {}).items():
+        if val is None or key in ("category", "placeholder"):
+            continue
+        label = key.replace("_iso", "").replace("_", " ").title()
+        parts.append(f"{label}: {_format_signal_value(key, val)}")
+    return "; ".join(parts) or "none"
 
 
 def _build_composer_prompt(facts: GroundedFacts, retry_reasons: Optional[list[str]] = None) -> Tuple[str, str]:
@@ -28,6 +54,7 @@ NON-NEGOTIABLE GROUNDING RULES:
 5. SINGLE LOW-FRICTION CTA: End with one clear binary question (e.g., 'Want me to pull the abstract + draft a 90-sec WhatsApp update?', 'Shall I schedule this offer for tomorrow?').
 6. CATEGORY TONE ({playbook.slug}): {playbook.tone} — {playbook.role_description}.
 7. TABOOS & BANNED PHRASES: Never use any of: {playbook.banned_phrases + facts.banned_taboos}.
+8. DECISION: Weave the trigger's concrete anomaly/opportunity directly with the merchant's exact pricing and offer into a high-compulsion opener ending in a binary choice CTA. Quote offer prices exactly as listed (e.g. ₹299); never invent a discount, trial length, or deadline.
 
 Return valid JSON with:
 - body: string (80-280 chars)
@@ -35,17 +62,22 @@ Return valid JSON with:
 - rationale: string (1-2 sentences explaining business rationale)
 """
 
-    active_offer_titles = [o.get("title") for o in facts.active_offers if o.get("title")]
+    active_offers = [_format_offer(o) for o in facts.active_offers if o.get("title")]
+    catalog_offers = list(dict.fromkeys(_format_offer({"title": t}) for t in facts.catalog_titles if t))[:8]
+    delta = facts.metrics.get("delta_7d") or {}
+    delta_str = ", ".join(f"{k.replace('_pct', '')} {v * 100:+.0f}%" for k, v in delta.items() if isinstance(v, (int, float)))
     prompt_lines = [
         "=== VERIFIABLE FACTS SHEET ===",
         f"Merchant: {facts.merchant_name} in {facts.locality}, {facts.city}",
         f"Salutation: {facts.salutation}",
         f"Category: {facts.category_slug}",
         f"Trigger: {facts.trigger_kind}",
-        f"Trigger Details: {facts.trigger_payload}",
-        f"Merchant Performance: views={facts.metrics.get('views', 'N/A')}, calls={facts.metrics.get('calls', 'N/A')}, ctr={facts.metrics.get('ctr', 'N/A')}",
+        f"Trigger Signals: {format_trigger_signals(facts.trigger_payload)}",
+        f"Merchant Performance (30d): views={facts.metrics.get('views', 'N/A')}, calls={facts.metrics.get('calls', 'N/A')}, ctr={facts.metrics.get('ctr', 'N/A')}"
+        + (f" | 7d change: {delta_str}" if delta_str else ""),
         f"Peer Benchmarks: avg_ctr={facts.peer_stats.get('avg_ctr', 'N/A')}, avg_rating={facts.peer_stats.get('avg_rating', 'N/A')}, avg_views={facts.peer_stats.get('avg_views_30d', 'N/A')}",
-        f"Active Catalog Offers: {active_offer_titles}",
+        f"Active Catalog Offers: {active_offers or 'none'}",
+        f"Category Catalog Offers: {catalog_offers or 'none'}",
     ]
     if facts.digest_item:
         prompt_lines.append(
@@ -56,7 +88,12 @@ Return valid JSON with:
             f"Customer: {facts.customer_name} (Last Visit: {facts.customer_last_visit})"
         )
 
-    prompt_lines.append(f"ALLOWED TOKENS: {sorted(list(facts.allowed_numbers))[:50]}")
+    # Surface citable figures (prices, %s, counts), not raw fractions like 0.021.
+    citable = sorted(
+        (t for t in facts.allowed_numbers if not t.startswith(("-", "0"))),
+        key=lambda t: (not t.startswith("₹"), not t.endswith("%"), t),
+    )
+    prompt_lines.append(f"ALLOWED TOKENS: {citable[:60]}")
 
     if retry_reasons:
         prompt_lines.append("\n=== PREVIOUS ATTEMPT FAILED HARD VALIDATION ===")

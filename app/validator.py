@@ -88,7 +88,7 @@ def validate_grounding_and_format(
 
     # 5. Catalog offer title consistency
     # If the message mentions a price with rupee symbol, verify it matches an active catalog offer
-    rupee_prices = [t for t in tokens if "₹" in t or (t.isdigit() and int(t) > 50)]
+    rupee_prices = [t for t in tokens if "₹" in t]
     if rupee_prices and facts.catalog_titles:
         # Check if the text matches any known catalog title with acceptable similarity
         matched_any = False

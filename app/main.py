@@ -208,5 +208,4 @@ async def tick(req: TickRequest):
 
 @app.post("/v1/reply", response_model=ReplyResponse)
 async def reply(req: ReplyRequest):
-    resp = _fsm.process_reply(req)
-    return resp
+    return await _fsm.process_reply_async(req, _gemini_client)

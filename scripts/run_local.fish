@@ -1,4 +1,7 @@
-#!/usr/bin/env fish
+#!/usr/bin/fish
+
+# Run from the repo root regardless of where the script is invoked from.
+cd (status dirname)/..
 
 set -q PORT; or set -l PORT 8000
 echo "==> Starting Vera Engine locally on port $PORT..."

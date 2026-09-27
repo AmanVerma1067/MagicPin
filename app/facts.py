@@ -41,17 +41,20 @@ def _extract_all_numeric_tokens(obj: Any, token_set: Set[str]) -> None:
             token_set.add(f"{obj:.1f}")
             token_set.add(f"{obj:.2f}")
             token_set.add(f"{obj:.3f}")
-            pct1 = f"{obj * 100:.0f}%"
-            pct2 = f"{obj * 100:.1f}%"
-            token_set.add(pct1)
-            token_set.add(pct2)
-            token_set.add(pct1.rstrip("%"))
-            token_set.add(pct2.rstrip("%"))
+            # Deltas are stored signed (-0.5); messages cite magnitude ("fell 50%").
+            for val in {obj, abs(obj)}:
+                pct1 = f"{val * 100:.0f}%"
+                pct2 = f"{val * 100:.1f}%"
+                token_set.add(pct1)
+                token_set.add(pct2)
+                token_set.add(pct1.rstrip("%"))
+                token_set.add(pct2.rstrip("%"))
         elif isinstance(obj, int):
             token_set.add(f"₹{obj}")
             token_set.add(f"₹{obj:,}")
             token_set.add(f"{obj:,}")
             token_set.add(f"{obj}%")
+            token_set.add(str(abs(obj)))
         return
 
     if isinstance(obj, str):
@@ -82,6 +85,25 @@ def _extract_all_numeric_tokens(obj: Any, token_set: Set[str]) -> None:
     elif isinstance(obj, (list, tuple, set)):
         for v in obj:
             _extract_all_numeric_tokens(v, token_set)
+
+
+_PRICE_RE = re.compile(r"₹\s?(\d[\d,]*)")
+
+
+def parse_offer(offer: Dict[str, Any]) -> Dict[str, Any]:
+    """Split an offer title like 'Dental Cleaning @ ₹299' into service + price.
+
+    price is the display string ('299', '1,499') or None for free/percentage offers.
+    """
+    title = (offer.get("title") or "").strip()
+    service = title.split("@")[0].strip() if "@" in title else title
+    m = _PRICE_RE.search(title)
+    price = m.group(1) if m else None
+    if price is None:
+        raw = str(offer.get("value") or "").replace(",", "")
+        if raw.isdigit() and int(raw) > 0 and "%" not in title:
+            price = f"{int(raw):,}"
+    return {"title": title, "service": service, "price": price}
 
 
 def extract_facts(
@@ -134,7 +156,11 @@ def extract_facts(
     trg_kind = trigger.get("kind", "general_nudge")
     trg_payload = trigger.get("payload", {})
 
-    top_item_id = trg_payload.get("top_item_id")
+    top_item_id = (
+        trg_payload.get("top_item_id")
+        or trg_payload.get("digest_item_id")
+        or trg_payload.get("alert_id")
+    )
     digest_item = None
     if top_item_id:
         for d in category.get("digest", []):
