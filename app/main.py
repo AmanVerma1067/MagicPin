@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
         _gemini_client = GeminiClient(api_key=settings.GEMINI_API_KEY, model=settings.GEMINI_MODEL)
     if _fsm is None:
         _fsm = ConversationManager(store=_store)
-    
+
     # Pre-load expanded seed dataset so engine is immediately context-aware on boot
     expanded_path = Path("expanded")
     if expanded_path.exists():
@@ -154,10 +154,10 @@ async def global_fail_safe_exception_handler(request: Request, exc: Exception):
     )
 
 
-@app.get("/v1/healthz", response_model=Health)
-@app.get("/healthz", response_model=Health, include_in_schema=False)
+@app.api_route("/v1/healthz", methods=["GET", "HEAD"], response_model=Health)
+@app.api_route("/healthz", methods=["GET", "HEAD"], response_model=Health, include_in_schema=False)
 async def healthz():
-    """Lock-free liveness probe in < 5ms."""
+    """Lock-free liveness probe in < 5ms supporting both GET and HEAD requests."""
     uptime = time.time() - _start_time if _start_time > 0 else 0.0
     counts = _store.get_counts()
     return Health(
